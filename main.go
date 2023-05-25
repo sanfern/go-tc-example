@@ -8,7 +8,6 @@ import (
 	"golang.org/x/sys/unix"
 	"net"
 	"os"
-	"time"
 )
 
 func main() {
@@ -96,10 +95,39 @@ func main() {
 		return
 	}
 
-	fmt.Println("Attaching tc program is successful, resting ...")
-	time.Sleep(2 * time.Second)
+	tcfilts, err := tcgo.Filter().Get(&tc.Msg{
+		Family:  unix.AF_UNSPEC,
+		Ifindex: uint32(devID.Index),
+		Handle:  0x0,
+		Parent:  core.BuildHandle(tc.HandleRoot, tc.HandleMinIngress),
+	})
 
-	if err := tcgo.Filter().Delete(&filter); err != nil {
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "could not get filters for eBPF program: %v\n", err)
+		return
+	}
+	for i := range tcfilts {
+		fmt.Println(tcfilts[i].Msg.Info)
+	}
+
+	filter1 := tc.Object{
+		tc.Msg{
+			Family:  unix.AF_UNSPEC,
+			Ifindex: uint32(devID.Index),
+			Handle:  0,
+			Parent:  core.BuildHandle(tc.HandleRoot, tc.HandleMinIngress),
+			Info:    tcfilts[0].Msg.Info,
+		},
+		tc.Attribute{
+			Kind: "bpf",
+			BPF: &tc.Bpf{
+				FD:    &fd,
+				Flags: &flags,
+			},
+		},
+	}
+
+	if err := tcgo.Filter().Delete(&filter1); err != nil {
 		fmt.Fprintf(os.Stderr, "could not del filter for eBPF program: %v\n", err)
 		return
 	}
